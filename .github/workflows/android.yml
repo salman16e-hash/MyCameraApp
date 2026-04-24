@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK (Auto-Fix Everything)
 
 on:
   push:
@@ -17,25 +17,65 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
+      # अब खुद प्रोजेक्ट ढूँढेगा और जो गायब होगा बना देगा
+      - name: Auto-find project & fix missing files
+        run: |
+          # सबसे पहले app/build.gradle ढूँढो
+          APP_BUILD=$(find . -path "*/app/build.gradle" -not -path "*/.gradle/*" | head -1)
+
+          if [ -z "$APP_BUILD" ]; then
+            echo "❌ कोई Android प्रोजेक्ट नहीं मिला (app/build.gradle गायब)"
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname $(dirname "$APP_BUILD"))
+          echo "✅ प्रोजेक्ट मिल गया: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+          cd "$PROJECT_DIR"
+
+          # अगर settings.gradle गायब है तो खुद बना देगा
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ]; then
+            echo "📝 settings.gradle नहीं है, खुद बना रहा हूँ..."
+            cat > settings.gradle << 'EOF'
+          pluginManagement {
+              repositories {
+                  gradlePluginPortal()
+                  google()
+                  mavenCentral()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "MyCameraApp"
+          include ':app'
+          EOF
+            echo "✅ settings.gradle अपने आप बन गया!"
+          fi
+
+          # अगर gradlew गायब है तो gradle से अपने आप बना लेगा
+          if [ ! -f gradlew ]; then
+            echo "📝 gradlew नहीं है, खुद बना रहा हूँ..."
+            gradle wrapper --gradle-version 8.4
+            echo "✅ gradlew अपने आप बन गया!"
+          fi
+
+          chmod +x gradlew
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.4'
 
-      - name: Find project root automatically (खुद ढूँढेगा कोई भी folder से)
-        run: |
-          PROJECT_DIR=$(find . -name "settings.gradle" -not -path "*/.gradle/*" -printf "%h\n" | head -1)
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "❌ settings.gradle नहीं मिला"
-            exit 1
-          fi
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-          echo "✅ Project found in: $PROJECT_DIR"
-
-      - name: Build APK (सही folder में जाकर compile करेगा)
+      - name: Build APK
         run: |
           cd $PROJECT_DIR
-          gradle assembleDebug
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
