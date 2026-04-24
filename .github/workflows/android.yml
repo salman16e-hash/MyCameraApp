@@ -1,0 +1,45 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.4'
+
+      - name: Find project root automatically (खुद ढूँढेगा कोई भी folder से)
+        run: |
+          PROJECT_DIR=$(find . -name "settings.gradle" -not -path "*/.gradle/*" -printf "%h\n" | head -1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "❌ settings.gradle नहीं मिला"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "✅ Project found in: $PROJECT_DIR"
+
+      - name: Build APK (सही folder में जाकर compile करेगा)
+        run: |
+          cd $PROJECT_DIR
+          gradle assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FolderCam-APK
+          path: |
+            **/app/build/outputs/apk/debug/app-debug.apk
